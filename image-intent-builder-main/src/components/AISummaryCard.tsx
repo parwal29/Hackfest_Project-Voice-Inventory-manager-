@@ -1,23 +1,31 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { DashboardCard } from '@/components/DashboardCard';
 import { Sparkles, TrendingUp, Package, DollarSign } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const summaryData = [
-  { icon: TrendingUp, label: 'Total Sales', value: '$124,567', change: '+12.5%', positive: true },
-  { icon: Package, label: 'Items Sold', value: '2,345', change: '+8.2%', positive: true },
-  { icon: DollarSign, label: 'Revenue', value: '$89,234', change: '+15.3%', positive: true },
-];
+interface AISummaryCardProps {
+  totalSales?: number;
+  itemsSold?: number;
+  revenue?: number;
+}
 
-export function AISummaryCard() {
+export function AISummaryCard({ totalSales = 0, itemsSold = 0, revenue = 0 }: AISummaryCardProps) {
+  const { t } = useTranslation();
   const [animatedValues, setAnimatedValues] = useState([0, 0, 0]);
   const [isVisible, setIsVisible] = useState(false);
+
+  const summaryData = [
+    { icon: TrendingUp, label: t('totalSales'), value: totalSales, change: '+12.5%', positive: true },
+    { icon: Package, label: t('itemsSold'), value: itemsSold, change: '+8.2%', positive: true },
+    { icon: DollarSign, label: t('revenue'), value: revenue, change: '+15.3%', positive: true },
+  ];
 
   useEffect(() => {
     setIsVisible(true);
     // Animate numbers
     const intervals = summaryData.map((_, index) => {
-      const target = index === 0 ? 124567 : index === 1 ? 2345 : 89234;
+      const target = summaryData[index].value;
       let current = 0;
       const increment = target / 50;
       const interval = setInterval(() => {
@@ -36,12 +44,12 @@ export function AISummaryCard() {
     });
 
     return () => intervals.forEach(interval => clearInterval(interval));
-  }, []);
+  }, [totalSales, itemsSold, revenue]);
 
-  const formatValue = (index: number, original: string) => {
-    if (index === 0) return `$${animatedValues[0].toLocaleString()}`;
+  const formatValue = (index: number) => {
+    if (index === 0) return `$${animatedValues[0].toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     if (index === 1) return animatedValues[1].toLocaleString();
-    return `$${animatedValues[2].toLocaleString()}`;
+    return `$${animatedValues[2].toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   return (
@@ -85,7 +93,7 @@ export function AISummaryCard() {
                   </span>
                 </div>
                 <div className="text-2xl font-bold text-foreground mb-1">
-                  {formatValue(index, item.value)}
+                  {formatValue(index)}
                 </div>
                 <div className="text-sm text-muted-foreground">{item.label}</div>
               </div>

@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 export function AuthVoice() {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const [isGuest, setIsGuest] = useState(false);
 
   const handleVoiceRegister = async () => {
     // Create a guest session or login as guest

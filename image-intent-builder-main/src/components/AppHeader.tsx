@@ -1,4 +1,4 @@
-import { Search, Pencil, RotateCcw, User, LogOut } from "lucide-react";
+import { Search, Pencil, RotateCcw, User, LogOut, Bell, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
@@ -6,6 +6,7 @@ import { BackgroundSelector } from "@/components/BackgroundSelector";
 import { VoiceAssistant } from "@/components/VoiceAssistant";
 import { LanguageSelector } from "@/components/LanguageSelector";
 import { useAuth } from "@/contexts/AuthContext";
+import { useInventory } from "@/contexts/InventoryContext";
 import { handleUpdate, handleCreate } from "@/lib/actions";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -17,12 +18,21 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export function AppHeader() {
   const [searchTerm, setSearchTerm] = useState("");
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user, logout } = useAuth();
+  const { alerts, markAlertAsRead, deleteAlert } = useInventory();
+  const unreadAlerts = alerts.filter(alert => !alert.read);
 
   const handleSearchSubmit = () => {
     if (searchTerm.trim()) {
@@ -39,61 +49,86 @@ export function AppHeader() {
   return (
     <header className="h-20 border-b border-border/30 bg-card/30 backdrop-blur-xl px-6 flex items-center justify-between relative z-20">
       <div className="flex items-center gap-4 flex-1">
-        <Button 
-          variant="outline" 
-          size="sm" 
-          className="gap-2 rounded-full bg-card/50 backdrop-blur-sm border-primary/30 hover:bg-card/70"
-          onClick={handleUpdate}
-        >
-          <RotateCcw className="w-4 h-4 text-primary" />
-          <span className="text-foreground">Update</span>
-        </Button>
-        
-        <Button 
-          variant="outline" 
-          size="sm" 
-          className="gap-2 rounded-full bg-card/50 backdrop-blur-sm border-primary/30 hover:bg-card/70"
-          onClick={handleCreate}
-        >
-          <Pencil className="w-4 h-4 text-primary" />
-          <span className="text-foreground">Create</span>
-        </Button>
-
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-primary/60 z-10" />
-          <Input
-            placeholder="Search"
-            className={cn(
-              "pl-12 pr-12 h-10 rounded-full",
-              "bg-secondary/50 backdrop-blur-sm",
-              "border-primary/30 focus:border-primary/60",
-              "text-foreground placeholder:text-primary/50",
-              "focus:ring-2 focus:ring-primary/20"
-            )}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            onKeyPress={(e) => {
-              if (e.key === 'Enter') {
-                handleSearchSubmit();
-              }
-            }}
-          />
-          <Button
-            size="icon"
-            variant="ghost"
-            className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg"
-            onClick={handleSearchSubmit}
-          >
-            <Search className="w-4 h-4 text-white" />
-          </Button>
-        </div>
-
         <LanguageSelector />
 
         <VoiceAssistant />
       </div>
 
       <div className="flex items-center gap-3">
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              size="icon"
+              className={cn(
+                "relative rounded-full bg-card/50 backdrop-blur-sm border-primary/30",
+                "hover:bg-card/70 transition-all duration-300 hover:scale-110",
+                unreadAlerts.length > 0 && "animate-pulse"
+              )}
+            >
+              <Bell className="w-4 h-4 text-primary" />
+              {unreadAlerts.length > 0 && (
+                <Badge
+                  variant="destructive"
+                  className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs animate-bounce"
+                >
+                  {unreadAlerts.length > 9 ? '9+' : unreadAlerts.length}
+                </Badge>
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80 bg-card/95 backdrop-blur-xl border-border/50">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="font-semibold text-foreground">Alerts</h4>
+              {unreadAlerts.length > 0 && (
+                <Badge variant="destructive">{unreadAlerts.length} new</Badge>
+              )}
+            </div>
+            <ScrollArea className="h-[300px]">
+              {alerts.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  No alerts
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {alerts.map((alert) => (
+                    <div
+                      key={alert.id}
+                      className={cn(
+                        "p-3 rounded-lg border transition-all hover:scale-[1.02] cursor-pointer",
+                        !alert.read && "bg-orange-500/10 border-orange-500/30",
+                        alert.read && "bg-secondary/50 border-border/30 opacity-60"
+                      )}
+                      onClick={() => markAlertAsRead(alert.id)}
+                    >
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle
+                          className={cn(
+                            "w-4 h-4 mt-0.5 flex-shrink-0",
+                            alert.severity === 'high' && "text-red-500",
+                            alert.severity === 'medium' && "text-orange-500",
+                            alert.severity === 'low' && "text-yellow-500"
+                          )}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground">
+                            {alert.message}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {new Date(alert.createdAt).toLocaleString()}
+                          </p>
+                        </div>
+                        {!alert.read && (
+                          <div className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0 mt-1.5 animate-pulse" />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          </PopoverContent>
+        </Popover>
         <BackgroundSelector />
         <ThemeSwitcher />
         <DropdownMenu>

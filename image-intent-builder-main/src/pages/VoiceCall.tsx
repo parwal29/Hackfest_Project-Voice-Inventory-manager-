@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Package, Mic, Play, Plus, PhoneOff, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
+import { useInventory } from '@/contexts/InventoryContext';
+import { useAgora } from '@/hooks/useAgora';
 import { cn } from '@/lib/utils';
 
 interface Message {
@@ -16,6 +18,8 @@ interface Message {
 export function VoiceCall() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { items, getStats } = useInventory();
+  const { isJoined, join, leave, mute, unmute } = useAgora('inventory-voice');
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
@@ -28,7 +32,18 @@ export function VoiceCall() {
     },
   ]);
   const [isRecording, setIsRecording] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    // Join Agora channel on mount
+    join();
+    return () => {
+      leave();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     // Initialize speech recognition
@@ -38,6 +53,42 @@ export function VoiceCall() {
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
       recognitionRef.current.lang = 'en-US';
+
+      recognitionRef.current.onstart = () => {
+        setIsListening(true);
+        console.log('Speech recognition started');
+      };
+
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+        if (isRecording) {
+          // Restart if still recording
+          try {
+            recognitionRef.current?.start();
+          } catch (e) {
+            console.error('Failed to restart recognition:', e);
+          }
+        }
+      };
+
+      recognitionRef.current.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+        if (event.error === 'no-speech') {
+          // No speech detected, restart
+          if (isRecording) {
+            setTimeout(() => {
+              try {
+                recognitionRef.current?.start();
+              } catch (e) {
+                console.error('Failed to restart after no-speech:', e);
+              }
+            }, 1000);
+          }
+        } else if (event.error === 'not-allowed') {
+          alert('Microphone permission denied. Please allow microphone access.');
+        }
+      };
 
       recognitionRef.current.onresult = (event: any) => {
         let finalTranscript = '';
@@ -50,14 +101,19 @@ export function VoiceCall() {
           handleUserMessage(finalTranscript.trim());
         }
       };
+    } else {
+      console.warn('Speech recognition not supported in this browser');
     }
 
     return () => {
       if (recognitionRef.current) {
         recognitionRef.current.stop();
       }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      }
     };
-  }, []);
+  }, [isRecording]);
 
   const handleUserMessage = async (text: string) => {
     // Add user message
@@ -70,20 +126,42 @@ export function VoiceCall() {
     };
     setMessages(prev => [...prev, userMessage]);
 
-    // Simulate AI response
+    // Generate AI response based on real inventory data
     setIsSpeaking(true);
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
+    const stats = getStats();
     const lowerText = text.toLowerCase();
     let response = '';
-    if (lowerText.includes('inventory') || lowerText.includes('stock')) {
-      response = 'Your current inventory status: 2,345 items in stock. Top categories: Electronics (450), Clothing (320), Home & Garden (280).';
-    } else if (lowerText.includes('sales') || lowerText.includes('revenue')) {
-      response = 'Sales summary: Total revenue this month is $124,567, up 12.5% from last month.';
-    } else if (lowerText.includes('hello') || lowerText.includes('hi')) {
-      response = "Hello! I'm your Agora AI assistant. I can help you manage your inventory, analyze sales, and answer questions about your business.";
+
+    if (lowerText.includes('inventory') || lowerText.includes('stock') || lowerText.includes('items')) {
+      const categories = Object.entries(stats.categories)
+        .map(([name, count]) => `${name} (${count})`)
+        .slice(0, 3)
+        .join(', ');
+      response = `Your current inventory has ${stats.totalItems} items with a total value of $${stats.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. ${stats.lowStockItems} items are running low on stock. Top categories: ${categories || 'No categories yet'}.`;
+    } else if (lowerText.includes('sales') || lowerText.includes('revenue') || lowerText.includes('money')) {
+      const totalSales = items.reduce((sum, item) => sum + (item.quantity * item.price * 0.3), 0);
+      response = `Your estimated sales revenue is $${totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} based on your current inventory. You have ${items.length} different products in stock.`;
+    } else if (lowerText.includes('low stock') || lowerText.includes('running low')) {
+      const lowStockItems = items.filter(item => item.quantity <= (item.lowStockThreshold || 10));
+      if (lowStockItems.length > 0) {
+        const itemNames = lowStockItems.slice(0, 3).map(item => item.name).join(', ');
+        response = `You have ${lowStockItems.length} items running low on stock: ${itemNames}${lowStockItems.length > 3 ? ' and more' : ''}. Consider restocking these items soon.`;
+      } else {
+        response = 'Great news! All your items have sufficient stock levels. No low stock alerts at the moment.';
+      }
+    } else if (lowerText.includes('hello') || lowerText.includes('hi') || lowerText.includes('hey')) {
+      response = `Hello ${user?.name || 'there'}! I'm your Agora AI assistant. I can help you manage your inventory, analyze sales, check stock levels, and answer questions about your business. What would you like to know?`;
+    } else if (lowerText.includes('help') || lowerText.includes('what can you do')) {
+      response = 'I can help you with: checking inventory status, viewing sales data, identifying low stock items, analyzing categories, and answering questions about your business. Just ask me anything!';
+    } else if (lowerText.includes('add') || lowerText.includes('create') || lowerText.includes('new item')) {
+      response = 'To add a new item, please go to the Inventory page and click the "Add Item" button. I can help you check your current inventory status if you need.';
+    } else if (lowerText.includes('category') || lowerText.includes('categories')) {
+      const categoryList = Object.keys(stats.categories).join(', ');
+      response = `Your inventory has items in these categories: ${categoryList || 'No categories yet. Add items to see categories.'}`;
     } else {
-      response = `I understand you mentioned "${text}". Let me help you with that. For inventory management, I can show stock levels, track products, and provide analytics.`;
+      response = `I understand you mentioned "${text}". I can help you with inventory management, sales analysis, stock levels, and business insights. Try asking about your inventory, sales, or low stock items.`;
     }
 
     const aiMessage: Message = {
@@ -97,29 +175,71 @@ export function VoiceCall() {
     setIsSpeaking(false);
   };
 
-  const toggleRecording = () => {
+  const toggleRecording = async () => {
     if (!recognitionRef.current) {
-      alert('Speech recognition not supported. Please use Chrome or Edge.');
+      alert('Speech recognition not supported. Please use Chrome or Edge browser.');
       return;
     }
 
     if (isRecording) {
-      recognitionRef.current.stop();
-      setIsRecording(false);
-    } else {
+      // Stop recording
       try {
+        recognitionRef.current.stop();
+        setIsRecording(false);
+        setIsListening(false);
+        if (isMuted) {
+          await unmute();
+          setIsMuted(false);
+        }
+      } catch (e) {
+        console.error('Failed to stop recognition:', e);
+      }
+    } else {
+      // Request microphone permission and start recording
+      try {
+        // Request microphone access
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStreamRef.current = stream;
+        
+        // Start speech recognition
         recognitionRef.current.start();
         setIsRecording(true);
-      } catch (e) {
+        setIsListening(true);
+        
+        if (!isMuted) {
+          await mute();
+          setIsMuted(true);
+        }
+      } catch (e: any) {
         console.error('Failed to start recognition:', e);
+        if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+          alert('Microphone permission denied. Please allow microphone access in your browser settings.');
+        } else if (e.name === 'NotFoundError') {
+          alert('No microphone found. Please connect a microphone and try again.');
+        } else {
+          alert('Failed to start voice recognition. Please try again.');
+        }
+        setIsRecording(false);
+        setIsListening(false);
       }
     }
   };
 
-  const handleLeave = () => {
+  const toggleMute = async () => {
+    if (isMuted) {
+      await unmute();
+      setIsMuted(false);
+    } else {
+      await mute();
+      setIsMuted(true);
+    }
+  };
+
+  const handleLeave = async () => {
     if (recognitionRef.current) {
       recognitionRef.current.stop();
     }
+    await leave();
     navigate('/');
   };
 
@@ -265,15 +385,22 @@ export function VoiceCall() {
                 className={cn(
                   "w-20 h-20 rounded-full flex items-center justify-center transition-all",
                   isRecording
-                    ? "bg-purple-600 hover:bg-purple-700 scale-110 animate-pulse shadow-2xl"
-                    : "bg-purple-500 hover:bg-purple-600 shadow-xl",
+                    ? "bg-purple-600 hover:bg-purple-700 scale-110 animate-pulse shadow-2xl ring-4 ring-purple-400/50"
+                    : "bg-purple-500 hover:bg-purple-600 shadow-xl hover:scale-105",
+                  isListening && "ring-4 ring-green-400/50"
                 )}
+                title={isRecording ? "Click to stop recording" : "Click to start recording"}
               >
                 <Mic className={cn(
                   "w-10 h-10 text-white",
                   isRecording && "animate-pulse"
                 )} />
               </button>
+              {isRecording && (
+                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-white bg-red-500 px-2 py-1 rounded">
+                  {isListening ? "Listening..." : "Processing..."}
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-4">

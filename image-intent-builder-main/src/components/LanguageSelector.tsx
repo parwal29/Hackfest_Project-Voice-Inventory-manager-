@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -21,16 +22,25 @@ const languages: { code: Language; name: string; native: string; flag: string }[
 ];
 
 export function LanguageSelector() {
-  const [selectedLanguage, setSelectedLanguage] = useState<Language>('ja');
+  const { i18n } = useTranslation();
+  const [selectedLanguage, setSelectedLanguage] = useState<Language>(
+    (i18n.language as Language) || 'en'
+  );
 
-  const currentLang = languages.find(lang => lang.code === selectedLanguage) || languages[2];
+  useEffect(() => {
+    const storedLang = localStorage.getItem('i18nextLng') as Language;
+    if (storedLang && languages.find(l => l.code === storedLang)) {
+      setSelectedLanguage(storedLang);
+      i18n.changeLanguage(storedLang);
+    }
+  }, [i18n]);
+
+  const currentLang = languages.find(lang => lang.code === selectedLanguage) || languages[0];
 
   const handleLanguageChange = (lang: Language) => {
     setSelectedLanguage(lang);
-    // Store in localStorage
+    i18n.changeLanguage(lang);
     localStorage.setItem('preferred-language', lang);
-    // You can add i18n logic here
-    console.log('Language changed to:', lang);
   };
 
   return (

@@ -3,15 +3,18 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AppSidebar } from "@/components/AppSidebar";
 import { AppHeader } from "@/components/AppHeader";
 import { BackgroundProvider } from "@/contexts/BackgroundContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { InventoryProvider } from "@/contexts/InventoryContext";
+import { DocumentsProvider } from "@/contexts/DocumentsContext";
 import { BackgroundWrapper } from "@/components/BackgroundWrapper";
-import { Auth } from "@/pages/Auth";
-import { AuthVoice } from "@/pages/AuthVoice";
+import { AuthUnified } from "@/pages/AuthUnified";
 import { VoiceCall } from "@/pages/VoiceCall";
 import Dashboard from "./pages/Dashboard";
+import Index from "./pages/Index";
 import Inventory from "./pages/Inventory";
 import Sales from "./pages/Sales";
 import Purchase from "./pages/Purchase";
@@ -50,17 +53,21 @@ function ProtectedRoute({ children, showLayout = true }: { children: React.React
   );
 }
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <BackgroundProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
-              <Route path="/auth" element={<AuthVoice />} />
-              <Route path="/auth-classic" element={<Auth />} />
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+
+// Only wrap with GoogleOAuthProvider if client ID is configured
+const AppContent = () => (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <InventoryProvider>
+          <DocumentsProvider>
+            <BackgroundProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Sonner />
+              <BrowserRouter>
+              <Routes>
+                <Route path="/auth" element={<AuthUnified />} />
               <Route
                 path="/voice-call"
                 element={
@@ -71,6 +78,14 @@ const App = () => (
               />
               <Route
                 path="/"
+                element={
+                  <ProtectedRoute>
+                    <Index />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboard"
                 element={
                   <ProtectedRoute>
                     <Dashboard />
@@ -138,8 +153,21 @@ const App = () => (
           </BrowserRouter>
         </TooltipProvider>
       </BackgroundProvider>
-    </AuthProvider>
-  </QueryClientProvider>
+          </DocumentsProvider>
+        </InventoryProvider>
+      </AuthProvider>
+    </QueryClientProvider>
 );
+
+const App = () => {
+  if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_ID !== '') {
+    return (
+      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+        <AppContent />
+      </GoogleOAuthProvider>
+    );
+  }
+  return <AppContent />;
+};
 
 export default App;
